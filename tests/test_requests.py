@@ -2465,6 +2465,10 @@ class TestPreparingURLs(object):
             (
                 u'http://[1200:0000:ab00:1234:0000:2552:7777:1313]:12345/',
                 u'http://[1200:0000:ab00:1234:0000:2552:7777:1313]:12345/'
+            ),
+            (
+                u'http://example.com.',
+                u'http://example.com./'
             )
         )
     )
@@ -2488,7 +2492,11 @@ class TestPreparingURLs(object):
             b"http://*",
             u"http://*.google.com",
             u"http://*",
-            u"http://☃.net/"
+            u"http://☃.net/",
+            b"http://.example.com",
+            b"http://example..com",
+            u"http://.example.com",
+            u"http://example..com"
         )
     )
     def test_preparing_bad_url(self, url):
