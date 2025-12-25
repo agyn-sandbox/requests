@@ -414,6 +414,10 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
             # IPv6 literals are enclosed in brackets and use ':' separators, skip them
             if not (host.startswith('[') and host.endswith(']')):
                 labels = host.split('.')
+                # Allow a trailing-dot FQDN by ignoring the final empty label if present
+                if labels and labels[-1] == '':
+                    labels = labels[:-1]
+                # Reject leading or consecutive dots resulting in empty labels
                 if any(label == '' for label in labels):
                     raise InvalidURL('URL has an invalid label.')
 
