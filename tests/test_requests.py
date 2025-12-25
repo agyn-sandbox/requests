@@ -2465,6 +2465,10 @@ class TestPreparingURLs(object):
             (
                 u'http://[1200:0000:ab00:1234:0000:2552:7777:1313]:12345/',
                 u'http://[1200:0000:ab00:1234:0000:2552:7777:1313]:12345/'
+            ,
+            (
+                u'http://example.com.',
+                u'http://example.com./'
             )
         )
     )
