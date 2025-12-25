@@ -157,6 +157,17 @@ class TestRequests(object):
                                    params=b'test=foo').prepare()
         assert request.url == 'http://example.com/?test=foo'
 
+    def test_prepared_request_non_ascii_params(self):
+        request = PreparedRequest()
+        request.prepare(
+            method='GET',
+            url='http://example.test',
+            params=u('q=ø'),
+            hooks=default_hooks()
+        )
+
+        assert request.url == 'http://example.test/?q=%C3%B8'
+
     def test_mixed_case_scheme_acceptable(self, httpbin):
         s = requests.Session()
         s.proxies = getproxies()

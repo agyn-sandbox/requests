@@ -81,9 +81,9 @@ class RequestEncodingMixin(object):
         """
 
         if isinstance(data, bytes):
-            return data
+            return to_native_string(data, 'utf-8')
         if isinstance(data, str):
-            return data.encode('utf-8')
+            return data
         elif hasattr(data, 'read'):
             return data
         elif hasattr(data, '__iter__'):
@@ -388,8 +388,6 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
                 fragment = fragment.encode('utf-8')
 
         enc_params = self._encode_params(params)
-        if isinstance(enc_params, bytes):
-            enc_params = to_native_string(enc_params)
         if enc_params:
             if query:
                 query = '%s&%s' % (query, enc_params)
