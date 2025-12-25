@@ -13,7 +13,7 @@ import requests
 import pytest
 from requests.auth import HTTPDigestAuth
 from requests.adapters import HTTPAdapter
-from requests.compat import str, cookielib, getproxies, urljoin, urlparse
+from requests.compat import str, bytes, is_py2, cookielib, getproxies, urljoin, urlparse
 from requests.cookies import cookiejar_from_dict
 from requests.exceptions import InvalidURL, MissingSchema
 from requests.structures import CaseInsensitiveDict
@@ -677,6 +677,47 @@ class RequestsTestCase(unittest.TestCase):
         p = req.prepare()
 
         assert p.headers['Content-Length'] == length
+
+    def test_unicode_method_request_with_files(self):
+        url = httpbin('post')
+        files = {'upload': ('test.txt', 'payload')}
+
+        response = requests.request(method=u'POST', url=url, files=files)
+
+        assert response.status_code == 200
+        assert response.request.method == 'POST'
+
+    def test_session_request_unicode_method_and_post(self):
+        session = requests.Session()
+        url = httpbin('post')
+        files = {'upload': ('test.txt', 'payload')}
+
+        unicode_method_response = session.request(method=u'POST', url=url, files=files)
+        assert unicode_method_response.status_code == 200
+        assert unicode_method_response.request.method == 'POST'
+
+        post_response = session.post(url, files={'upload': ('test.txt', 'payload')})
+        assert post_response.status_code == 200
+        assert post_response.request.method == 'POST'
+
+    def test_unicode_method_allows_non_ascii_paths(self):
+        url = httpbin(u'anything', u'ø')
+
+        response = requests.request(method=u'POST', url=url, data={'value': '1'})
+
+        assert response.status_code == 200
+        assert response.request.method == 'POST'
+
+    def test_prepared_request_method_is_native_str(self):
+        request = requests.Request(method=u'POST', url=httpbin('post'))
+        prepared = request.prepare()
+
+        if is_py2:
+            assert isinstance(prepared.method, bytes)
+        else:
+            assert isinstance(prepared.method, str)
+
+        assert prepared.method == 'POST'
 
 class TestContentEncodingDetection(unittest.TestCase):
 
