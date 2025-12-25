@@ -391,7 +391,11 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
         """Prepares the given HTTP headers."""
 
         if headers:
-            self.headers = CaseInsensitiveDict((to_native_string(name), value) for name, value in headers.items())
+            self.headers = CaseInsensitiveDict(
+                (to_native_string(name), value)
+                for name, value in headers.items()
+                if value is not None
+            )
         else:
             self.headers = CaseInsensitiveDict()
 

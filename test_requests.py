@@ -384,8 +384,10 @@ class RequestsTestCase(unittest.TestCase):
     def test_conflicting_post_params(self):
         url = httpbin('post')
         with open('requirements.txt') as f:
-            pytest.raises(ValueError, "requests.post(url, data='[{\"some\": \"data\"}]', files={'some': f})")
-            pytest.raises(ValueError, "requests.post(url, data=u'[{\"some\": \"data\"}]', files={'some': f})")
+            with pytest.raises(ValueError):
+                requests.post(url, data='[{"some": "data"}]', files={'some': f})
+            with pytest.raises(ValueError):
+                requests.post(url, data=u'[{"some": "data"}]', files={'some': f})
 
     def test_request_ok_set(self):
         r = requests.get(httpbin('status', '404'))
@@ -803,6 +805,20 @@ class RequestsTestCase(unittest.TestCase):
         s.headers['foo'] = 'bar'
         r = s.get(httpbin('get'), headers={'FOO': None})
         assert 'foo' not in r.request.headers
+
+    def test_session_default_header_none_omits_accept_encoding(self):
+        s = requests.Session()
+        assert 'Accept-Encoding' in s.headers
+        s.headers['Accept-Encoding'] = None
+        r = s.get(httpbin('get'))
+        assert 'Accept-Encoding' not in r.request.headers
+
+    def test_session_default_header_remove_is_case_insensitive(self):
+        s = requests.Session()
+        assert 'Accept-Encoding' in s.headers
+        s.headers['ACCEPT-ENCODING'] = None
+        r = s.get(httpbin('get'))
+        assert 'Accept-Encoding' not in r.request.headers
 
     def test_params_are_merged_case_sensitive(self):
         s = requests.Session()
