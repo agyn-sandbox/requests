@@ -21,7 +21,7 @@ from requests.cookies import cookiejar_from_dict, morsel_to_cookie
 from requests.exceptions import (ConnectionError, ConnectTimeout,
                                  InvalidSchema, InvalidURL, MissingSchema,
                                  ReadTimeout, Timeout)
-from requests.models import PreparedRequest
+from requests.models import PreparedRequest, Response
 from requests.structures import CaseInsensitiveDict
 from requests.sessions import SessionRedirectMixin
 from requests.models import urlencode
@@ -596,6 +596,83 @@ class RequestsTestCase(unittest.TestCase):
         s = requests.Session()
         prep = s.prepare_request(req)
         assert prep.url == "https://httpbin.org/"
+
+    def test_session_request_normalizes_bytes_method(self):
+        class RecordingAdapter(HTTPAdapter):
+            def __init__(self):
+                super(RecordingAdapter, self).__init__()
+                self.last_method = None
+
+            def send(self, request, *args, **kwargs):
+                self.last_method = request.method
+                response = Response()
+                response.status_code = 200
+                response._content = b''
+                response.url = request.url
+                response.request = request
+                return response
+
+        adapter = RecordingAdapter()
+        s = requests.Session()
+        s.mount('http://', adapter)
+
+        s.request(method=b'GET', url='http://example.com/bytes')
+
+        assert adapter.last_method == 'GET'
+        assert isinstance(adapter.last_method, builtin_str)
+
+    def test_session_prepare_request_normalizes_bytes_method(self):
+        s = requests.Session()
+        req = requests.Request(method=b'GET', url='http://example.com/')
+
+        prep = s.prepare_request(req)
+
+        assert prep.method == 'GET'
+        assert isinstance(prep.method, builtin_str)
+
+    def test_redirect_with_bytes_method(self):
+        class DummyRaw(object):
+            def read(self, *args, **kwargs):
+                return b''
+
+            def close(self):
+                pass
+
+            def release_conn(self):
+                pass
+
+        class RedirectAdapter(HTTPAdapter):
+            def __init__(self):
+                super(RedirectAdapter, self).__init__()
+                self.methods = []
+
+            def send(self, request, *args, **kwargs):
+                self.methods.append(request.method)
+                response = Response()
+                response.status_code = 301 if len(self.methods) == 1 else 200
+                response._content = b''
+                response.url = request.url
+                response.request = request
+                response.raw = DummyRaw()
+                response.headers = CaseInsensitiveDict()
+                if len(self.methods) == 1:
+                    response.headers['location'] = 'http://example.com/final'
+                return response
+
+        adapter = RedirectAdapter()
+        s = requests.Session()
+        s.max_redirects = 2
+        s.mount('http://', adapter)
+
+        response = s.request(
+            method=b'POST',
+            url='http://example.com/start',
+            allow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        assert adapter.methods == ['POST', 'GET']
+        assert isinstance(adapter.methods[1], builtin_str)
 
     def test_links(self):
         r = requests.Response()

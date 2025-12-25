@@ -360,9 +360,14 @@ class Session(SessionRedirectMixin):
         if self.trust_env and not auth and not self.auth:
             auth = get_netrc_auth(request.url)
 
+        prepared_method = request.method
+        if prepared_method is not None:
+            prepared_method = to_native_string(prepared_method)
+            prepared_method = prepared_method.upper()
+
         p = PreparedRequest()
         p.prepare(
-            method=request.method.upper(),
+            method=prepared_method,
             url=request.url,
             files=request.files,
             data=request.data,
@@ -425,7 +430,7 @@ class Session(SessionRedirectMixin):
             If Tuple, ('cert', 'key') pair.
         """
 
-        method = builtin_str(method)
+        method = to_native_string(method)
 
         # Create the Request.
         req = Request(
