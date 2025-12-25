@@ -69,7 +69,18 @@ class HTTPDigestAuth(AuthBase):
 
         realm = self.chal['realm']
         nonce = self.chal['nonce']
-        qop = self.chal.get('qop')
+        raw_qop = self.chal.get('qop')
+        qop = None
+        if raw_qop:
+            qop_options = [
+                option.lower()
+                for option in (token.strip() for token in raw_qop.split(','))
+                if option
+            ]
+            if 'auth' in qop_options:
+                qop = 'auth'
+            elif 'auth-int' in qop_options:
+                qop = 'auth-int'
         algorithm = self.chal.get('algorithm')
         opaque = self.chal.get('opaque')
 
@@ -105,7 +116,7 @@ class HTTPDigestAuth(AuthBase):
 
         A1 = '%s:%s:%s' % (self.username, realm, self.password)
         A2 = '%s:%s' % (method, path)
-        
+
         HA1 = hash_utf8(A1)
         HA2 = hash_utf8(A2)
 
@@ -120,14 +131,17 @@ class HTTPDigestAuth(AuthBase):
         s += os.urandom(8)
 
         cnonce = (hashlib.sha1(s).hexdigest()[:16])
-        noncebit = "%s:%s:%s:%s:%s" % (nonce, ncvalue, cnonce, qop, HA2)
         if _algorithm == 'MD5-SESS':
             HA1 = hash_utf8('%s:%s:%s' % (HA1, nonce, cnonce))
 
         if qop is None:
             respdig = KD(HA1, "%s:%s" % (nonce, HA2))
-        elif qop == 'auth' or 'auth' in qop.split(','):
+        elif qop == 'auth':
+            noncebit = "%s:%s:%s:%s:%s" % (nonce, ncvalue, cnonce, qop, HA2)
             respdig = KD(HA1, noncebit)
+        elif qop == 'auth-int':
+            # XXX handle auth-int.
+            return None
         else:
             # XXX handle auth-int.
             return None
@@ -144,7 +158,7 @@ class HTTPDigestAuth(AuthBase):
         if entdig:
             base += ', digest="%s"' % entdig
         if qop:
-            base += ', qop=auth, nc=%s, cnonce="%s"' % (ncvalue, cnonce)
+            base += ', qop=%s, nc=%s, cnonce="%s"' % (qop, ncvalue, cnonce)
 
         return 'Digest %s' % (base)
 
