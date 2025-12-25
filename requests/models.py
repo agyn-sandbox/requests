@@ -308,6 +308,7 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
         self.method = method
         if self.method is not None:
             self.method = self.method.upper()
+            self.method = to_native_string(self.method)
 
     def prepare_url(self, url, params):
         """Prepares the given HTTP URL."""
