@@ -406,6 +406,17 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
         elif host.startswith(u'*'):
             raise InvalidURL('URL has an invalid label.')
 
+        # For ASCII hostnames, ensure we don't have empty labels caused by leading,
+        # trailing, or consecutive dots (e.g., ".example.com", "example..com").
+        # These should be treated as invalid early and mapped to InvalidURL
+        # rather than bubbling up as UnicodeError/LocationParseError later.
+        if unicode_is_ascii(host):
+            # IPv6 literals are enclosed in brackets and use ':' separators, skip them
+            if not (host.startswith('[') and host.endswith(']')):
+                labels = host.split('.')
+                if any(label == '' for label in labels):
+                    raise InvalidURL('URL has an invalid label.')
+
         # Carefully reconstruct the network location
         netloc = auth or ''
         if netloc:
