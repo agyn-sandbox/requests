@@ -280,5 +280,65 @@ class RequestsTestCase(unittest.TestCase):
         self.assertEqual(r.links['next']['rel'], 'next')
 
 
+class PreparedRequestContentLengthTests(unittest.TestCase):
+
+    url = 'http://example.com/'
+
+    def prepare(self, method, **kwargs):
+        req = requests.Request(method=method, url=self.url, **kwargs)
+        return req.prepare()
+
+    def test_no_content_length_on_get_without_body(self):
+        prep = self.prepare('GET')
+        self.assertNotIn('Content-Length', prep.headers)
+
+    def test_no_content_length_on_head_without_body(self):
+        prep = self.prepare('HEAD')
+        self.assertNotIn('Content-Length', prep.headers)
+
+    def test_content_length_on_get_with_body(self):
+        body = 'payload'
+        prep = self.prepare('GET', data=body)
+        self.assertEqual(prep.headers['Content-Length'], str(len(body)))
+
+    def test_chunked_on_stream_without_length(self):
+        class Stream(object):
+            def __init__(self):
+                self._emitted = False
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                if self._emitted:
+                    raise StopIteration
+                self._emitted = True
+                return 'chunk'
+
+            def next(self):  # pragma: no cover -- Py2 compatibility
+                return self.__next__()
+
+            def __len__(self):
+                raise TypeError()
+
+        prep = self.prepare('POST', data=Stream())
+        self.assertEqual(prep.headers['Transfer-Encoding'], 'chunked')
+        self.assertNotIn('Content-Length', prep.headers)
+
+    def test_post_keeps_zero_content_length_when_no_body(self):
+        prep = self.prepare('POST')
+        self.assertEqual(prep.headers['Content-Length'], '0')
+
+    def test_redirect_post_to_get_drops_content_length(self):
+        post_prep = self.prepare('POST')
+        self.assertEqual(post_prep.headers['Content-Length'], '0')
+
+        redirect_headers = dict(post_prep.headers)
+        redirect_req = requests.Request('GET', self.url, headers=redirect_headers)
+        redirect_prep = redirect_req.prepare()
+
+        self.assertNotIn('Content-Length', redirect_prep.headers)
+
+
 if __name__ == '__main__':
     unittest.main()

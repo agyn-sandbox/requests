@@ -386,6 +386,11 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
         self.body = body
 
     def prepare_content_length(self, body):
+        if body is None and self.method in ('GET', 'HEAD'):
+            if 'Content-Length' in self.headers:
+                del self.headers['Content-Length']
+            return
+
         self.headers['Content-Length'] = '0'
         if hasattr(body, 'seek') and hasattr(body, 'tell'):
             body.seek(0, 2)
