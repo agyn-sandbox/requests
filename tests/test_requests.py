@@ -14,8 +14,9 @@ import re
 import io
 import requests
 import pytest
+from types import MethodType
 from requests.adapters import HTTPAdapter
-from requests.auth import HTTPDigestAuth, _basic_auth_str
+from requests.auth import HTTPDigestAuth, HTTPProxyAuth, _basic_auth_str
 from requests.compat import (
     Morsel, cookielib, getproxies, str, urlparse,
     builtin_str)
@@ -34,6 +35,7 @@ from requests.compat import MutableMapping
 
 from .compat import StringIO, u
 from .utils import override_environ
+from urllib3.response import HTTPResponse
 from urllib3.util import Timeout as Urllib3Timeout
 
 # Requests to this URL should always fail with a connection timeout (nothing
@@ -600,6 +602,94 @@ class TestRequests:
         sent_headers = resp.json().get('headers', {})
 
         assert sent_headers.get("Proxy-Authorization") == proxy_auth_value
+
+    def test_https_connect_uses_request_proxy_authorization_header(self, monkeypatch):
+        adapter = HTTPAdapter()
+        session = requests.Session()
+        session.trust_env = False
+        session.mount('https://', adapter)
+
+        proxies = {'https': 'http://proxy.local:8080'}
+        expected_auth = _basic_auth_str('user', 'pass')
+
+        proxy_headers_snapshots = []
+
+        class DummyConnection(object):
+            def __init__(self, manager):
+                self.manager = manager
+
+            def urlopen(self, method=None, url=None, body=None, headers=None, **kwargs):
+                proxy_headers = self.manager.proxy_headers
+                if proxy_headers is None:
+                    proxy_headers_snapshots.append(None)
+                else:
+                    proxy_headers_snapshots.append(proxy_headers.copy())
+
+                return HTTPResponse(
+                    status=200,
+                    headers={},
+                    body=b'',
+                    preload_content=True
+                )
+
+        class DummyProxyManager(object):
+            def __init__(self):
+                self.proxy_headers = {'Existing': 'value'}
+
+            def connection_from_url(self, url):
+                return DummyConnection(self)
+
+            def clear(self):
+                pass
+
+        proxy_manager = DummyProxyManager()
+        original_headers = proxy_manager.proxy_headers
+
+        def fake_proxy_manager_for(this, proxy, **proxy_kwargs):
+            return proxy_manager
+
+        monkeypatch.setattr(
+            adapter,
+            'proxy_manager_for',
+            MethodType(fake_proxy_manager_for, adapter)
+        )
+
+        request = requests.Request(
+            'GET',
+            'https://example.com',
+            auth=HTTPProxyAuth('user', 'pass')
+        )
+        prepared = session.prepare_request(request)
+
+        response = session.send(prepared, proxies=proxies, verify=False, stream=True)
+        response.close()
+
+        assert len(proxy_headers_snapshots) == 1
+        first_snapshot = proxy_headers_snapshots[0]
+        assert first_snapshot is not None
+        assert first_snapshot['Proxy-Authorization'] == expected_auth
+        assert first_snapshot['Existing'] == 'value'
+
+        assert proxy_manager.proxy_headers is original_headers
+        assert 'Proxy-Authorization' not in proxy_manager.proxy_headers
+
+        request_without_auth = requests.Request('GET', 'https://example.com')
+        prepared_without_auth = session.prepare_request(request_without_auth)
+
+        second_response = session.send(
+            prepared_without_auth,
+            proxies=proxies,
+            verify=False,
+            stream=True
+        )
+        second_response.close()
+
+        assert len(proxy_headers_snapshots) == 2
+        second_snapshot = proxy_headers_snapshots[1]
+        assert second_snapshot is not None
+        assert 'Proxy-Authorization' not in second_snapshot
+        assert proxy_manager.proxy_headers is original_headers
+        assert 'Proxy-Authorization' not in proxy_manager.proxy_headers
 
     def test_basicauth_with_netrc(self, httpbin):
         auth = ('user', 'pass')
@@ -1895,6 +1985,20 @@ class TestRequests:
         adapter = HTTPAdapter()
         headers = adapter.proxy_headers("http://user:@httpbin.org")
         assert headers == {'Proxy-Authorization': 'Basic dXNlcjo='}
+
+    def test_rebuild_proxies_keeps_proxy_auth_with_empty_password(self):
+        session = requests.Session()
+        session.trust_env = False
+
+        request = requests.Request('GET', 'http://example.com/')
+        prepared = session.prepare_request(request)
+        prepared.headers['Proxy-Authorization'] = 'to-be-cleared'
+
+        proxies = {'http': 'http://user:@proxy.local'}
+
+        session.rebuild_proxies(prepared, proxies)
+
+        assert prepared.headers['Proxy-Authorization'] == _basic_auth_str('user', '')
 
     def test_response_json_when_content_is_None(self, httpbin):
         r = requests.get(httpbin('/status/204'))

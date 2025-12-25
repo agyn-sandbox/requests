@@ -409,10 +409,48 @@ class HTTPAdapter(BaseAdapter):
         :rtype: requests.Response
         """
 
+        proxy = select_proxy(request.url, proxies)
+        proxy_authorization = request.headers.get('Proxy-Authorization')
+        proxy_manager = None
+        original_proxy_manager_headers = None
+        updated_proxy_headers = None
+        tunnel_proxy_headers = None
+        proxy_conn = None
+        _MISSING = object()
+        original_conn_proxy_headers = _MISSING
+
+        if proxy and proxy_authorization:
+            proxy = prepend_scheme_if_needed(proxy, 'http')
+            proxy_url = parse_url(proxy)
+            proxy_scheme = proxy_url.scheme.lower() if proxy_url.scheme else ''
+
+            if not proxy_scheme.startswith('socks'):
+                # Ungated to keep CONNECT auth consistent after CPython 3.8.12
+                # changes (Issue #16).
+                proxy_manager = self.proxy_manager_for(proxy)
+                original_proxy_manager_headers = getattr(proxy_manager, 'proxy_headers', None)
+
+                if original_proxy_manager_headers is None:
+                    updated_proxy_headers = {}
+                else:
+                    updated_proxy_headers = original_proxy_manager_headers.copy()
+
+                updated_proxy_headers['Proxy-Authorization'] = proxy_authorization
+                proxy_manager.proxy_headers = updated_proxy_headers
+                tunnel_proxy_headers = updated_proxy_headers
+
         try:
             conn = self.get_connection(request.url, proxies)
         except LocationValueError as e:
+            if proxy_manager and updated_proxy_headers is not None:
+                proxy_manager.proxy_headers = original_proxy_manager_headers
             raise InvalidURL(e, request=request)
+
+        proxy_conn = conn
+
+        if tunnel_proxy_headers and hasattr(proxy_conn, 'proxy_headers'):
+            original_conn_proxy_headers = getattr(proxy_conn, 'proxy_headers', _MISSING)
+            proxy_conn.proxy_headers = tunnel_proxy_headers
 
         self.cert_verify(conn, request.url, verify, cert)
         url = self.request_url(request, proxies)
@@ -534,5 +572,18 @@ class HTTPAdapter(BaseAdapter):
                 raise InvalidHeader(e, request=request)
             else:
                 raise
+
+        finally:
+            if updated_proxy_headers is not None and proxy_manager is not None:
+                if proxy_conn is not None and hasattr(proxy_conn, 'proxy_headers'):
+                    if original_conn_proxy_headers is _MISSING:
+                        try:
+                            del proxy_conn.proxy_headers
+                        except AttributeError:
+                            proxy_conn.proxy_headers = None
+                    else:
+                        proxy_conn.proxy_headers = original_conn_proxy_headers
+
+                proxy_manager.proxy_headers = original_proxy_manager_headers
 
         return self.build_response(request, resp)
