@@ -80,8 +80,10 @@ class RequestEncodingMixin(object):
         if parameters are supplied as a dict.
         """
 
-        if isinstance(data, (str, bytes)):
-            return to_native_string(data)
+        if isinstance(data, bytes):
+            return data
+        if isinstance(data, str):
+            return data.encode('utf-8')
         elif hasattr(data, 'read'):
             return data
         elif hasattr(data, '__iter__'):
@@ -386,6 +388,8 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
                 fragment = fragment.encode('utf-8')
 
         enc_params = self._encode_params(params)
+        if isinstance(enc_params, bytes):
+            enc_params = to_native_string(enc_params)
         if enc_params:
             if query:
                 query = '%s&%s' % (query, enc_params)
@@ -444,10 +448,30 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
                 (body, content_type) = self._encode_files(files, data)
             else:
                 if data:
-                    body = self._encode_params(data)
-                    if isinstance(data, basestring) or hasattr(data, 'read'):
+                    def _charset_from_content_type(header_value):
+                        if not header_value:
+                            return None
+                        parts = header_value.split(';')
+                        for param in parts[1:]:
+                            name, sep, value = param.strip().partition('=')
+                            if not sep:
+                                continue
+                            if name.strip().lower() == 'charset':
+                                return value.strip().strip("'\"")
+                        return None
+
+                    if hasattr(data, 'read'):
+                        body = data
+                        content_type = None
+                    elif isinstance(data, bytes):
+                        body = data
+                        content_type = None
+                    elif isinstance(data, str):
+                        charset = _charset_from_content_type(self.headers.get('Content-Type')) or 'utf-8'
+                        body = data.encode(charset)
                         content_type = None
                     else:
+                        body = self._encode_params(data)
                         content_type = 'application/x-www-form-urlencoded'
 
             self.prepare_content_length(body)

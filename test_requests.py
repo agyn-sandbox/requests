@@ -1699,6 +1699,86 @@ def test_prepared_request_complete_copy():
     assert_copy(p, p.copy())
 
 
+def test_prepared_request_preserves_non_ascii_bytes_body():
+    payload = b'\xff\xfe\xfd'
+    p = PreparedRequest()
+    p.prepare(
+        method='POST',
+        url='http://www.example.com',
+        data=payload,
+        hooks=default_hooks()
+    )
+
+    assert p.body is payload
+    assert p.headers['Content-Length'] == builtin_str(len(payload))
+
+
+def test_prepared_request_encodes_unicode_text_to_utf8():
+    text = u('føø=bar∂')
+    expected = text.encode('utf-8')
+    p = PreparedRequest()
+    p.prepare(
+        method='POST',
+        url='http://www.example.com',
+        data=text,
+        hooks=default_hooks()
+    )
+
+    assert isinstance(p.body, bytes)
+    assert p.body == expected
+    assert p.headers['Content-Length'] == builtin_str(len(expected))
+
+
+def test_prepared_request_respects_charset_header_for_text():
+    text = u('café')
+    headers = {'Content-Type': 'text/plain; charset=latin-1'}
+    expected = text.encode('latin-1')
+    p = PreparedRequest()
+    p.prepare(
+        method='POST',
+        url='http://www.example.com',
+        headers=headers,
+        data=text,
+        hooks=default_hooks()
+    )
+
+    assert p.body == expected
+    assert p.headers['Content-Type'] == 'text/plain; charset=latin-1'
+    assert p.headers['Content-Length'] == builtin_str(len(expected))
+
+
+def test_prepared_request_form_data_with_unicode_values():
+    data = {'field': u('✓')}
+    expected = urlencode(data)
+    p = PreparedRequest()
+    p.prepare(
+        method='POST',
+        url='http://www.example.com',
+        data=data,
+        hooks=default_hooks()
+    )
+
+    assert p.body == expected
+    assert isinstance(p.body, str)
+    assert p.headers['Content-Type'] == 'application/x-www-form-urlencoded'
+    assert p.headers['Content-Length'] == builtin_str(len(expected))
+
+
+def test_prepared_request_file_like_body_unchanged():
+    stream = io.BytesIO(b'binary payload: \xfa')
+    p = PreparedRequest()
+    p.prepare(
+        method='POST',
+        url='http://www.example.com',
+        data=stream,
+        hooks=default_hooks()
+    )
+
+    assert p.body is stream
+    assert p.headers['Content-Length'] == builtin_str(len(stream.getvalue()))
+    assert stream.tell() == 0
+
+
 def test_prepare_unicode_url():
     p = PreparedRequest()
     p.prepare(
