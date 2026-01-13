@@ -293,8 +293,8 @@ class SessionRedirectMixin(object):
         except KeyError:
             username, password = None, None
 
-        if username and password:
-            headers['Proxy-Authorization'] = _basic_auth_str(username, password)
+        if username is not None:
+            headers['Proxy-Authorization'] = _basic_auth_str(username, password or '')
 
         return new_proxies
 
